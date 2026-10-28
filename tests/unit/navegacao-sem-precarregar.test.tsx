@@ -38,7 +38,14 @@ describe("navegação sem competir com a tela aberta", () => {
     [
       "hub de configurações",
       () => (
-        <NavHub group="organizacao" role="admin" isPlatformAdmin={false} title="Configurações" />
+        <NavHub
+          group="organizacao"
+          role="admin"
+          isPlatformAdmin={false}
+          title="Configurações"
+          subtitle=""
+          modulosLigados={[]}
+        />
       ),
     ],
   ] as const)("%s só solicita o destino quando a pessoa navega", (_nome, montar) => {
