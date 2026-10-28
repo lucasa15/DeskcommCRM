@@ -162,6 +162,7 @@ export function BarraInferior() {
           return (
             <li key={aba.href} className="flex min-w-0 flex-1">
               <Link
+                prefetch={false}
                 href={aba.href}
                 aria-current={aqui ? "page" : undefined}
                 className={cn(

@@ -85,7 +85,14 @@ export function NavHub({
   extensionGuides = [],
   extensionsUnavailable = false,
 }: NavHubProps) {
-  const secoes = hubSections(group, isPlatformAdmin, role, interfaceSettings, modulosLigados, capacidadesLigadas);
+  const secoes = hubSections(
+    group,
+    isPlatformAdmin,
+    role,
+    interfaceSettings,
+    modulosLigados,
+    capacidadesLigadas,
+  );
 
   return (
     <div className="flex h-full flex-col gap-8 p-6">
@@ -110,7 +117,7 @@ export function NavHub({
             {items.map((item) => {
               const Icon = item.icon;
               return (
-                <Link key={item.href} href={item.href} className="block">
+                <Link prefetch={false} key={item.href} href={item.href} className="block">
                   <Card className="flex h-full gap-3 p-4 transition-colors hover:border-border-strong">
                     <Icon
                       size={20}
@@ -150,6 +157,7 @@ export function NavHub({
               </p>
             </div>
             <Link
+              prefetch={false}
               href="/app/extensions"
               className="text-xs font-medium text-accent underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:outline-hidden"
             >
@@ -187,6 +195,7 @@ export function NavHub({
                   const compact = guide.configuration.density === "compact";
                   return (
                     <Link
+                      prefetch={false}
                       key={`${guide.installation_id}:${contribution.id}`}
                       href={`/app/extensions/${encodeURIComponent(guide.installation_id)}?card=${encodeURIComponent(contribution.id)}`}
                       data-testid={`extension-contribution-${guide.installation_id}-${contribution.id}`}

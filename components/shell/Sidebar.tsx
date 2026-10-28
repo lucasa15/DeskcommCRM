@@ -198,10 +198,7 @@ export function SidebarContent({
           )
         ) : (
           <span
-            className={cn(
-              "min-w-0 truncate font-semibold tracking-tight",
-              collapsed && "sr-only",
-            )}
+            className={cn("min-w-0 truncate font-semibold tracking-tight", collapsed && "sr-only")}
             title={nome}
           >
             {nome}
@@ -332,6 +329,7 @@ export function SidebarContent({
                     return (
                       <li key={item.href}>
                         <Link
+                          prefetch={false}
                           href={item.href}
                           title={collapsed ? t(item.label) : undefined}
                           aria-current={isActive ? "page" : undefined}
@@ -360,6 +358,7 @@ export function SidebarContent({
                   {group.hub && (
                     <li>
                       <Link
+                        prefetch={false}
                         href={group.hub.href}
                         title={collapsed ? t(group.hub.label) : undefined}
                         aria-current={pathname === group.hub.href ? "page" : undefined}
@@ -386,6 +385,7 @@ export function SidebarContent({
       <div className="border-t p-2">
         {rodape && (
           <Link
+            prefetch={false}
             href={rodape.href}
             title={collapsed ? t(rodape.label) : undefined}
             aria-current={pathname.startsWith(rodape.href) ? "page" : undefined}
