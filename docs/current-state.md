@@ -222,9 +222,9 @@ e o nome do script sugere cobertura total que o conteúdo não entrega.
 
 ### 4.3 Rate limit HTTP praticamente inexistente 🔴
 
-`checkRateLimit` (`lib/ai/dispatcher/rate-limit.ts`) é chamado em **2** lugares:
-o webhook público de captação e o dispatcher de IA. Sem proteção: `/login`, `/signup`,
-`/team/accept-invite/:token`, os crons, `/api/internal/*`, `/api/mcp`, webhooks WAHA
+`checkRateLimit` (`lib/ai/dispatcher/rate-limit.ts`) tem mais de um chamador —
+reconte, não cite: `grep -rln 'checkRateLimit(' app lib --include='*.ts' | grep -v '\.test\.'`. Sem proteção: `/login`, `/signup`,
+`/team/accept-invite/:token`, os crons, `/api/mcp`, webhooks WAHA
 e Nuvemshop. Detalhe e impacto em [`threat-model.md`](threat-model.md).
 
 ### 4.4 `node_modules` deste checkout está incompleto 🟠
@@ -373,4 +373,4 @@ Duas lições que valem para quem mantiver este documento:
 
 ### Conversões de anúncios: confirmação e reprocessamento
 
-A integração de vendas oferece Data Manager nas novas autorizações do Google, preserva conexões anteriores e acompanha protocolos assíncronos. Configurações → Conversões mostra falhas temporárias, teste Meta e pendências com ação de reprocessamento. Contratos, limites e roteiro de piloto: [conversões de anúncios](runbooks/conversoes-de-anuncios.md). Captura web completa e eventos por etapa não fazem parte desta entrega.
+A integração de vendas oferece Data Manager nas novas autorizações do Google, preserva conexões anteriores e acompanha protocolos assíncronos. Configurações → Conversões mostra falhas temporárias, teste Meta e pendências com ação de reprocessamento. Contratos, limites e roteiro de piloto: [conversões de anúncios](runbooks/conversoes-de-anuncios.md). A captura web oferece links nomeados e script por número; regras Google por etapa, histórico e diagnóstico ficam em Configurações → Conversões. Os testes e limites de validação desta continuação estão no mapa de jornadas. Entrega real às plataformas exige um piloto com credenciais e recibos da conta.

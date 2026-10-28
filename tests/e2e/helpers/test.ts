@@ -1,7 +1,8 @@
 /**
- * O `test` da suíte: o do Playwright, com uma diferença — `page.goto` e
- * `page.reload` só devolvem quando o streaming SSR terminou de REVELAR a página
- * (issue #1374). Toda spec importa daqui, não de `@playwright/test`; a cerca é
+ * O `test` da suíte: o do Playwright, com uma diferença — `page.goto`,
+ * `page.reload`, `page.goBack` e `page.goForward` só devolvem quando o streaming
+ * SSR terminou de REVELAR a página (issues #1374 e #884). Toda spec importa
+ * daqui, não de `@playwright/test`; a cerca é
  * `tests/unit/e2e-specs-usam-o-test-da-suite.test.ts`.
  *
  * ═══ Por que `load` não basta ═══════════════════════════════════════════════
@@ -30,7 +31,16 @@
  */
 import { test as base, type Page } from "@playwright/test";
 
+import {
+  EVIDENCIA_DE_ERRO_VAZIA,
+  embrulharANavegacao,
+  METODOS_DE_NAVEGACAO_REVELADOS,
+  mensagemDaCaixaNaoRevelada,
+  type EvidenciaDoErroDeServidor,
+} from "./revelacao-nas-cargas";
+
 export * from "@playwright/test";
+export { METODOS_DE_NAVEGACAO_REVELADOS };
 
 /** Caixa do streaming que ainda não foi revelada. */
 export const CAIXA_PENDENTE = 'div[hidden][id^="S:"]';
@@ -41,6 +51,30 @@ export const CAIXA_PENDENTE = 'div[hidden][id^="S:"]';
  */
 const TETO_DA_REVELACAO_MS = 15_000;
 
+/**
+ * Lê da página o que o `$RX` do erro de servidor deixou: o `data-dgst` do
+ * marcador do boundary (é ali que o próprio `$RX` escreve o digest) e os textos
+ * dos scripts — o `$RX("B:N","<digest>")` cru. Só é chamada DEPOIS de a espera
+ * desistir, e só para montar o diagnóstico; quem decide a mensagem é
+ * `mensagemDaCaixaNaoRevelada`, em função pura, no teste unit.
+ */
+function evidenciaDoErroDeServidor(page: Page): Promise<EvidenciaDoErroDeServidor> {
+  return page.evaluate(() => {
+    const digestsDoMarcador: string[] = [];
+    const mensagensDoMarcador: string[] = [];
+    for (const marcador of Array.from(document.querySelectorAll("[data-dgst]"))) {
+      const dados = (marcador as HTMLElement).dataset;
+      if (dados.dgst) digestsDoMarcador.push(dados.dgst);
+      if (dados.msg) mensagensDoMarcador.push(dados.msg);
+    }
+    return {
+      digestsDoMarcador,
+      mensagensDoMarcador,
+      scripts: Array.from(document.scripts).map((script) => script.textContent ?? ""),
+    };
+  });
+}
+
 export async function esperarARevelacao(page: Page): Promise<void> {
   try {
     await page.waitForFunction((seletor) => document.querySelector(seletor) === null, CAIXA_PENDENTE, {
@@ -48,9 +82,22 @@ export async function esperarARevelacao(page: Page): Promise<void> {
       timeout: TETO_DA_REVELACAO_MS,
     });
   } catch (erro) {
+    // Ler a página é DIAGNÓSTICO, não critério: se ela não puder mais ser lida
+    // (contexto morto, navegação em curso), fica a evidência vazia e a mensagem
+    // de sempre. A espera continua reprovando exatamente como antes.
+    let evidencia = EVIDENCIA_DE_ERRO_VAZIA;
+    try {
+      evidencia = await evidenciaDoErroDeServidor(page);
+    } catch {
+      evidencia = EVIDENCIA_DE_ERRO_VAZIA;
+    }
     throw new Error(
-      `a caixa do streaming SSR (${CAIXA_PENDENTE}) não foi revelada em ${TETO_DA_REVELACAO_MS} ms ` +
-        `depois da carga de ${page.url()} — caixa órfã de verdade (issue #1374).`,
+      mensagemDaCaixaNaoRevelada({
+        caixaPendente: CAIXA_PENDENTE,
+        tetoMs: TETO_DA_REVELACAO_MS,
+        url: page.url(),
+        evidencia,
+      }),
       { cause: erro },
     );
   }
@@ -58,24 +105,17 @@ export async function esperarARevelacao(page: Page): Promise<void> {
 
 const comEspera = new WeakSet<Page>();
 
+/**
+ * ⚠️ A COBERTURA VIVE EM `METODOS_DE_NAVEGACAO_REVELADOS`, e o embrulho em
+ * `embrulharANavegacao` — os dois em `revelacao-nas-cargas.ts`, porque é lá que
+ * o teste unit os prova. A #884 nasceu de um método de fora da cobertura:
+ * `goBack`. Não embrulhe método à mão aqui: a cerca de
+ * `tests/unit/revelacao-cobre-a-navegacao-inteira.test.ts` reprova.
+ */
 function esperarARevelacaoNasCargas(page: Page): void {
   if (comEspera.has(page)) return;
   comEspera.add(page);
-
-  const goto = page.goto.bind(page);
-  page.goto = async (url, opcoes) => {
-    const resposta = await goto(url, opcoes);
-    // `commit` pede de propósito a página antes de ela existir.
-    if (opcoes?.waitUntil !== "commit") await esperarARevelacao(page);
-    return resposta;
-  };
-
-  const reload = page.reload.bind(page);
-  page.reload = async (opcoes) => {
-    const resposta = await reload(opcoes);
-    if (opcoes?.waitUntil !== "commit") await esperarARevelacao(page);
-    return resposta;
-  };
+  embrulharANavegacao(page, () => esperarARevelacao(page));
 }
 
 export const test = base.extend({

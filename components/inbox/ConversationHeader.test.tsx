@@ -16,12 +16,13 @@ import type { ConversationWithContact } from "@/hooks/inbox/useConversationsReal
 const closeMutate = vi.hoisted(() => vi.fn());
 const arquivarMutate = vi.hoisted(() => vi.fn());
 const startCall = vi.hoisted(() => vi.fn());
+const claimMutate = vi.hoisted(() => vi.fn());
 
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useAuth: () => ({ user: { id: "u1", support: null } }),
 }));
 vi.mock("@/hooks/inbox/useClaimConversation", () => ({
-  useClaimConversation: () => ({ mutate: vi.fn(), isPending: false }),
+  useClaimConversation: () => ({ mutate: claimMutate, isPending: false }),
 }));
 vi.mock("@/hooks/inbox/useReleaseConversation", () => ({
   useReleaseConversation: () => ({ mutate: vi.fn(), isPending: false }),
@@ -37,13 +38,28 @@ vi.mock("@/hooks/inbox/useResumeAiAttendance", () => ({
 vi.mock("@/hooks/inbox/usePauseAiAttendance", () => ({
   usePauseAiAttendance: () => ({ mutate: vi.fn(), isPending: false }),
 }));
+// Spec 21, etapa 15: o cabeçalho chama os hooks de pessoal em toda
+// renderização (antes dos early returns) — sem este mock, o `useMutation` real
+// exigiria QueryClientProvider e o teste inteiro caía.
+vi.mock("@/hooks/contacts/usePersonalContact", () => ({
+  useMarkPersonalContact: () => ({ mutate: vi.fn(), isPending: false }),
+  useUnmarkPersonalContact: () => ({ mutate: vi.fn(), isPending: false }),
+}));
 vi.mock("@/hooks/ai/useAutomaticoAtivo", () => ({
   useAutomaticoAtivo: () => ({ data: false }),
 }));
 vi.mock("@/components/kanban/OwnerBadge", () => ({ OwnerBadge: () => null }));
+// A faixa da carteira (#2591) lê a carteira com react-query; este arquivo mede
+// a barra de ações, não a carteira (que tem arquivo próprio).
+vi.mock("@/components/inbox/FaixaDaCarteira", () => ({ FaixaDaCarteira: () => null }));
 vi.mock("@/components/inbox/ReassignDialog", () => ({ ReassignDialog: () => null }));
 vi.mock("@/components/inbox/SnoozeButton", () => ({ SnoozeButton: () => null }));
 vi.mock("@/components/inbox/JanelaSelo", () => ({ JanelaSelo: () => null }));
+// O atendimento conjunto (#2542) tem arquivo de teste próprio; este arquivo mede
+// a barra de ações, e o componente novo lê react-query (exigiria provider).
+vi.mock("@/components/inbox/ParticipantesDaConversa", () => ({
+  ParticipantesDaConversa: () => null,
+}));
 vi.mock("@/components/inbox/ChannelLogo", () => ({ ChannelLogo: () => null }));
 vi.mock("@/hooks/voice/useVoiceSessionStatus", () => ({
   useVoiceSessionStatus: () => ({ data: { configured: true, paired: true } }),
@@ -85,6 +101,40 @@ beforeEach(() => {
   closeMutate.mockReset();
   arquivarMutate.mockReset();
   startCall.mockReset();
+  claimMutate.mockReset();
+});
+
+/**
+ * O BOTÃO "ASSUMIR" NUNCA SOME (#3012).
+ *
+ * Ele é a SAÍDA da regra que trava a caixa de mensagem até alguém assumir: se
+ * ele desaparecesse em algum estado, a conversa ficaria sem caminho de volta. O
+ * cabeçalho não conhece a preferência da organização de propósito — quem lê a
+ * opção é o compositor —, então estes casos medem o que não pode depender dela:
+ * o botão existe e funciona com a conversa SEM dono, e continua existindo com a
+ * conversa já assumida por outra pessoa (onde ele é o gesto de reatribuir).
+ */
+describe("ConversationHeader — 'Assumir' é a saída da trava (#3012)", () => {
+  it("aparece e assume numa conversa SEM dono", async () => {
+    const user = userEvent.setup();
+    render(<ConversationHeader conversation={conversa("open")} />);
+
+    const botao = screen.getByRole("button", { name: "Assumir" });
+    await user.click(botao);
+
+    expect(claimMutate).toHaveBeenCalledWith({
+      conversation_id: "conv-1",
+      expected_assignee: null,
+    });
+  });
+
+  it("continua visível com a conversa já assumida por OUTRO atendente", () => {
+    const atual = conversa("open");
+    atual.assigned_to_user_id = "u2";
+    render(<ConversationHeader conversation={atual} />);
+
+    expect(screen.getByRole("button", { name: "Assumir" })).toBeInTheDocument();
+  });
 });
 
 describe("ConversationHeader — chamada de voz na Inbox", () => {
@@ -98,6 +148,7 @@ describe("ConversationHeader — chamada de voz na Inbox", () => {
       phone_number: "+5511999999999",
       tags: [],
       is_blocked: false,
+      is_personal: false,
       is_anonymized: false,
     };
     render(<ConversationHeader conversation={atual} />);
@@ -116,6 +167,7 @@ describe("ConversationHeader — chamada de voz na Inbox", () => {
       phone_number: "+5511999999999",
       tags: [],
       is_blocked: false,
+      is_personal: false,
       is_anonymized: false,
     };
     render(<ConversationHeader conversation={atual} />);
@@ -185,5 +237,24 @@ describe("ConversationHeader — Fechar e Arquivar por AlertDialog", () => {
         "Arquivar encerra este atendimento e guarda a conversa no histórico. Se o cliente escrever de novo, ela volta.",
       ),
     ).toBeNull();
+  });
+});
+
+describe("ConversationHeader — busca dentro da conversa (#1793)", () => {
+  it("o botão só existe com quem o atenda, e só abre a busca — nenhuma ação de atendimento", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<ConversationHeader conversation={conversa("open")} />);
+    expect(screen.queryByRole("button", { name: "Buscar nesta conversa" })).toBeNull();
+
+    const buscar = vi.fn();
+    rerender(
+      <ConversationHeader conversation={conversa("open")} onBuscar={buscar} buscaAberta={false} />,
+    );
+    const botao = screen.getByRole("button", { name: "Buscar nesta conversa" });
+    expect(botao).toHaveAttribute("aria-expanded", "false");
+    await user.click(botao);
+    expect(buscar).toHaveBeenCalledOnce();
+    expect(closeMutate).not.toHaveBeenCalled();
+    expect(arquivarMutate).not.toHaveBeenCalled();
   });
 });

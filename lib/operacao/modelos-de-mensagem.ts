@@ -31,11 +31,8 @@
  * resposta que faz quem chamou consertar o pedido.
  */
 import { ApiError } from "@/lib/api/types";
-import { marcacaoDoCrm, renderTemplate } from "@/lib/automation/template";
+import { MARCACAO, marcacaoDoCrm, renderTemplate } from "@/lib/automation/template";
 import type { DepsDaOperacao } from "@/lib/operacao/entradas-automaticas";
-
-/** A varredura de marcação, a MESMA do render (`lib/automation/template.ts`). */
-const MARCACAO = /\{\{\s*([\w.]+)\s*\}\}/g;
 
 /** Teto do nome de uma variável do integrador. Curto de propósito: é identificador. */
 export const CHAVE_DE_VALOR_MAX = 40;
@@ -89,7 +86,12 @@ export async function listarModelosDeMensagem(
     incluirPessoais ? dono : null,
   );
 
-  const { data, error } = await consulta.order("updated_at", { ascending: false });
+  // A mesma ordem da listagem (`app/api/v1/message-templates/route.ts`): a que o
+  // operador escolheu na tela (#3244), não a de edição.
+  const { data, error } = await consulta
+    .order("ordem", { ascending: true })
+    .order("updated_at", { ascending: false })
+    .order("id", { ascending: true });
   if (error) throw new ApiError(500, "internal_error", undefined, deps.requestId, error.message);
 
   return ((data ?? []) as unknown as Array<Record<string, unknown>>).map((t) => {
@@ -290,7 +292,7 @@ async function montarContexto(
   if (contactId) {
     const { data: contato } = await deps.supabase
       .from("contacts")
-      .select("id, name, phone_number, email")
+      .select("id, name, phone_number, email, display_name")
       .eq("id", contactId)
       .eq("organization_id", deps.organizationId)
       .maybeSingle();
@@ -298,6 +300,25 @@ async function montarContexto(
   }
 
   return contexto;
+}
+
+/**
+ * O contato dono de um negócio desta organização, ou `null` — negócio que não
+ * existe aqui e negócio sem contato dão o MESMO `null`, de propósito: quem
+ * compara com o contato do turno não deve conseguir distinguir os dois.
+ */
+export async function contatoDoNegocio(
+  deps: DepsDaOperacao,
+  leadId: string,
+): Promise<string | null> {
+  const { data, error } = await deps.supabase
+    .from("crm_leads")
+    .select("contact_id")
+    .eq("id", leadId)
+    .eq("organization_id", deps.organizationId)
+    .maybeSingle();
+  if (error) throw new ApiError(500, "internal_error", undefined, deps.requestId, error.message);
+  return (data as { contact_id: string | null } | null)?.contact_id ?? null;
 }
 
 /** As marcações do corpo, sem repetição e na ordem em que aparecem. */
@@ -310,6 +331,8 @@ function lacunasDe(template: string, contexto: Record<string, unknown>): string[
   const vazias = new Set<string>();
   for (const m of template.matchAll(MARCACAO)) {
     const marcacao = m[1]!;
+    // Com texto de reserva (`{{x|"aluno"}}`) o render nunca deixa a frase vazia: não é lacuna.
+    if (m[2] !== undefined) continue;
     // Comparar o render de UMA marcação isolada é o que garante a mesma régua
     // do texto final: alias, caminho aninhado e ausência passam pelo mesmo código.
     if (renderTemplate(`{{${marcacao}}}`, contexto) === "") vazias.add(marcacao);
